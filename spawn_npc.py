@@ -6,7 +6,7 @@
 # This work is licensed under the terms of the MIT license.
 # For a copy, see <https://opensource.org/licenses/MIT>.
 
-# Simülasyon içine NPC modelleri ekler
+# Simulasyon içine NPC modelleri ekler
 
 import glob
 import os

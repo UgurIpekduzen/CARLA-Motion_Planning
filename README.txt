@@ -5,6 +5,6 @@ CARLA Simulator açık olduğunda,
 
 sonra ikinci terminalde:
 
-	python main.py
+	python motion_planning.py
 
 kaynak kodlarını çalıştırın.

@@ -8,7 +8,6 @@ import random
 
 import carla
 from agents.navigation.controller import VehiclePIDController
-from agents.tools.misc import draw_waypoints
 
 
 class RoadOption(Enum):

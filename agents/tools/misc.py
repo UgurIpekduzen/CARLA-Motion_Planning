@@ -9,9 +9,20 @@
 import math
 import numpy as np
 import carla
+import cv2 
+import os
+import time
+from natsort import natsorted
 
 actor_list = []
 collision_hist = []
+
+IM_WIDTH = 640
+IM_HEIGHT = 480
+IMAGE_NO = 0
+IMG_PATH = ""
+FR_PATH = "./frames"
+REC_PATH = "./records"
 
 def set_vehicle(_world, transform):
     # Aracın kurulumu yapılır
@@ -22,14 +33,66 @@ def set_vehicle(_world, transform):
     actor_list.append(_vehicle)
     print("Actor " + str(_vehicle.id) + " added at " + str(transform.location))
 
+    # RGB Kamera
+    rgb_cam = blueprint_library.find('sensor.camera.rgb')
+    rgb_cam.set_attribute("image_size_x", f"{IM_WIDTH}")
+    rgb_cam.set_attribute("image_size_y", f"{IM_HEIGHT}")
+    rgb_cam.set_attribute("fov", f"110")
+
+    transform = carla.Transform(carla.Location(x=2.5, z=0.7))
+    _rgb_camera = _world.spawn_actor(rgb_cam, transform, attach_to=_vehicle, attachment_type=carla.AttachmentType.Rigid)
+    actor_list.append(_rgb_camera)
+    print("Front camera " + str(_rgb_camera.id) + " added")
+    
+    # Kamera görüntüleri için bir klasör oluşturulur
+    try:
+        os.makedirs(FR_PATH)
+    except OSError:
+        print ("Creation of the directory %s failed" % FR_PATH)
+    else:
+        print ("Successfully created the directory %s" % FR_PATH)
+
     # Çarpışma sensörü
     _col_sensor = blueprint_library.find("sensor.other.collision")
     _col_sensor = _world.spawn_actor(_col_sensor, transform, attach_to=_vehicle)
     actor_list.append(_col_sensor)
-    _col_sensor.listen(lambda event: _collision_data(event))
     print("Collision sensor " + str(_col_sensor.id) + " added")
     
+    _rgb_camera.listen(lambda data: _process_img(data, _vehicle.get_control(), get_speed(_vehicle)))
+    _col_sensor.listen(lambda event: _collision_data(event))
+    
     return _vehicle
+
+def _process_img(_image, control, speed):
+    
+    np_img = np.array(_image.raw_data)
+    reshaped_img = np_img.reshape((IM_HEIGHT, IM_WIDTH, 4))
+    cv2.putText(reshaped_img, f"Throttle     = {_truncate(control.throttle, 2)}",(430, 30), cv2.FONT_HERSHEY_PLAIN, 1,(255,255,255),2)
+    cv2.putText(reshaped_img, f"Steer        = {_truncate(control.steer, 2)}",(430, 60), cv2.FONT_HERSHEY_PLAIN, 1,(255,255,255),2)
+    cv2.putText(reshaped_img, f"Brake        = {_truncate(control.brake, 2)}",(430, 90), cv2.FONT_HERSHEY_PLAIN, 1,(255,255,255),2)
+    cv2.putText(reshaped_img, f"Speed(km/h) = {_truncate(speed, 2)}",(430, 120), cv2.FONT_HERSHEY_PLAIN, 1,(255,255,255),2)
+    front_cam = reshaped_img[:, :, :3]
+    global IMAGE_NO, IMG_PATH
+    IMG_PATH = f"{FR_PATH}/{IMAGE_NO}.jpg"
+ 
+    
+    cv2.imwrite(IMG_PATH,front_cam)
+    IMAGE_NO += 1
+    return front_cam
+
+def _truncate(number, decimals=0):
+    """
+    Returns a value truncated to a specific number of decimal places.
+    """
+    if not isinstance(decimals, int):
+        raise TypeError("decimal places must be an integer.")
+    elif decimals < 0:
+        raise ValueError("decimal places has to be 0 or more.")
+    elif decimals == 0:
+        return math.trunc(number)
+
+    factor = 10.0 ** decimals
+    return math.trunc(number * factor) / factor
 
 def _collision_data(event):
     # Eğer bir çarpışma gerçekleşirse çarpışmanın olduğu konum kaydedilir.
@@ -37,22 +100,49 @@ def _collision_data(event):
     event_loc = event.other_actor.get_location()
     return collision_hist.append((event_loc.x, event_loc.y)) 
 
+def load_frames_from_folder():
+    frames = []
+    file_list = natsorted(os.listdir(FR_PATH))  
+    for filename in file_list:
+        print(filename)
+        filepath = os.path.join(FR_PATH,filename)
+        fr = cv2.imread(filepath)
+        if fr is not None:
+            frames.append((filepath, fr))
+    return frames
+
+def save_test_as_video(fps):
+    # Video kayıtları için bir klasör oluşturulur
+    try:
+        os.makedirs(REC_PATH)
+    except OSError:
+        print ("Creation of the directory %s failed" % REC_PATH)
+    else:
+        print ("Successfully created the directory %s" % REC_PATH)
+
+    print("Recording Test Drive Video...")
+    
+    frames = load_frames_from_folder()
+    
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter("video.mp4",
+                            fourcc,
+                            fps, 
+                            (IM_WIDTH, IM_HEIGHT))
+    for frame in frames:
+        # print(frame["File Path"])
+        out.write(frame[1])
+    out.release()
+    
+    print(f"Test drive video recorded")
+    # for frame in frames:
+    #     os.remove(frame["File Path"])
+
 # Mevcut harita üzerindeki herhangi bir nesneyi işaretler.
 def draw_string(world, object_location, color, string, life_time):
     world.debug.draw_string(object_location, string, draw_shadow=False,
                                        color=carla.Color(r=color[0], g=color[1], b=color[2]), life_time=life_time,
                                        persistent_lines=True)
-
-def draw_waypoints(world, waypoints, z=0.5):
-    # Z ile verilen belirli bir yükseklikteki ara noktaların bir listesi çizilir.
-    
-    for wpt in waypoints:
-        wpt_t = wpt.transform
-        begin = wpt_t.location + carla.Location(z=z)
-        angle = math.radians(wpt_t.rotation.yaw)
-        end = begin + carla.Location(x=math.cos(angle), y=math.sin(angle))
-        world.debug.draw_arrow(begin, end, arrow_size=0.3, life_time=1.0)
-
 
 def get_speed(vehicle):
     # Bir aracın hızını Km / saat cinsinden hesaplar.

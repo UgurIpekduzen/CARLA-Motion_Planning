@@ -1,9 +1,7 @@
 import carla
 from agents.navigation.basic_agent import BasicAgent
-import time
 from agents.tools.plot import Plotter
-from agents.tools.misc import draw_string, set_vehicle, get_speed, actor_list, collision_hist
-
+from agents.tools.misc import draw_string, set_vehicle, get_speed, actor_list, collision_hist, save_test_as_video
 def main():
     try:        
         # Bir Carla istemcisi oluşturma
@@ -11,7 +9,7 @@ def main():
         
         # Harita bilgileri
         world = client.get_world()
-        
+        world_map = world.get_map()
         # Harita üzerinde bir başlangıç ve varış noktası seçimi
         agent_origin = carla.Transform(carla.Location(x=229.97378540039062, y=67.59939575195312, z=0.44999998807907104),
                                         carla.Rotation(pitch=0.16792702674865723, yaw=91.39320373535156, roll=6.670134666819649e-09))
@@ -30,8 +28,6 @@ def main():
         prev_rl_locations = [] # Önceki kırmızı ışık konumları
         prev_bv_locations = [] # Önceki engel araç konumları
         prev_col_locations = [] # Önceki çarpışma konumları
-
-        time.sleep(10)
 
         while True:
             if agent.done() != True:
@@ -62,16 +58,16 @@ def main():
 
                 agent.show_road_option()
             else:
-                plots._unique_lists_append(prev_rl_locations, prev_bv_locations, prev_col_locations)
-                plots.save_graphs()
+                for actor in actor_list:
+                    actor.destroy()
+                print("All cleaned up!")
                 break   
+        
+        save_test_as_video(25)
+        plots._unique_lists_append(prev_rl_locations, prev_bv_locations, prev_col_locations)
+        plots.save_graphs() 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
-
-        for actor in actor_list:
-                actor.destroy()
-                print("All cleaned up!")
-
     for actor in actor_list:
                 actor.destroy()
                 print("All cleaned up!")
